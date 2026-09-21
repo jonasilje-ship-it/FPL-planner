@@ -1,0 +1,82 @@
+name: Bygg og publiser siden
+
+on:
+  schedule:
+    # 05:30 norsk sommertid — etter at FPL har gjort prisendringene rundt 02:30.
+    - cron: "30 3 * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Pages trenger disse rettighetene for å kunne ta imot en utrulling.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Én utrulling om gangen, og la den som er i gang bli ferdig.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      FPL_ENTRY_ID: ${{ vars.FPL_ENTRY_ID || '3486140' }}
+      FPL_THROTTLE_SECONDS: "0.4"
+      DATABASE_URL: sqlite:///data/fpl.sqlite
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # Databasen bygges ikke fra bunnen hver gang. Den ligger i cachen mellom
+      # kjøringene, så den tunge historikken bare hentes når cachen er tom.
+      - name: Hent databasen fra cache
+        uses: actions/cache@v4
+        with:
+          path: data/fpl.sqlite
+          key: fpl-db-${{ github.run_id }}
+          restore-keys: fpl-db-
+
+      - name: Første gang — last inn tidligere sesonger
+        run: |
+          if [ ! -f data/fpl.sqlite ]; then
+            echo "Ingen database i cachen, bygger fra bunnen."
+            python scripts/run_ingest.py historical
+          fi
+
+      - name: Hent data
+        run: |
+          python scripts/run_ingest.py core
+          python scripts/run_ingest.py prices
+          python scripts/run_ingest.py history
+          python scripts/run_ingest.py squad
+          python scripts/run_ingest.py eo --sample-size 150
+
+      - name: Kjør modell og optimizer
+        run: python scripts/run_ingest.py predict
+
+      - name: Bygg siden
+        run: python scripts/build_site.py --out site --with-data
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
