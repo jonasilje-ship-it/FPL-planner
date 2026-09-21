@@ -6,6 +6,7 @@ Skjemaet er skrevet med SQLAlchemy Core slik at det virker uendret paa SQLite
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from sqlalchemy import (
@@ -299,7 +300,13 @@ def get_engine(echo: bool = False) -> Engine:
     if _engine is None:
         settings = get_settings()
         kwargs: dict[str, Any] = {"echo": echo, "future": True}
-        if not settings.is_sqlite:
+        if settings.is_sqlite:
+            # SQLite oppretter ikke mappen filen skal ligge i - bare filen selv.
+            # Et ferskt checkout (f.eks. i CI) har ikke `data/`-mappen enda.
+            path = settings.database_url.split("///", 1)[-1]
+            if path and path != ":memory:":
+                Path(path).parent.mkdir(parents=True, exist_ok=True)
+        else:
             # Supabase kobler ned inaktive tilkoblinger; sjekk at de lever for bruk.
             kwargs.update(pool_pre_ping=True, pool_recycle=300)
         _engine = create_engine(settings.database_url, **kwargs)
