@@ -1,7 +1,3 @@
-"""Den statiske siden: datainnsamling og rendring.
+"""FPL Planner - egen plattform for Fantasy Premier League."""
 
-`collect.py` henter alt fra databasen, `render.py` gjor det om til en
-selvstendig HTML-fil. Samme fil fungerer bade som GitHub Pages-side og som
-publisert artifact - sporreboksen skrur seg selv av der Claude-runtime ikke
-finnes.
-"""
+__version__ = "0.1.0"
